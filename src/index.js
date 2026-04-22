@@ -33,7 +33,9 @@ function printEntry(entry, tag) {
   console.log(fmt('SB side:', entry.sbSide));
   console.log(fmt('SB odds:', `${entry.sbOdds.toFixed(4)}x  (impl ${pct(entry.p2)})`));
   console.log('');
+  const liveWarning = entry.isLive ? '  ⚠  GAME IN PROGRESS — verify line is still open' : '  ✓ pre-game';
   console.log(fmt('Total implied:', `${pct(entry.totalImpliedProb)}  ${entry.totalImpliedProb < 1 ? '← ARBITRAGE' : `(${pct(entry.totalImpliedProb - 1)} over fair)`}`));
+  console.log(fmt('Status:', liveWarning));
 
   if (entry.profit > 0) {
     console.log('');

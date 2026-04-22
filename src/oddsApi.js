@@ -31,8 +31,30 @@ class OddsApiClient {
         oddsFormat: 'decimal',
       },
     });
-    // Attach sport key to each event for downstream use
-    return (res.data || []).map((e) => ({ ...e, sport_key: sport }));
+    return (res.data || []).map((e) => ({
+      ...e,
+      sport_key: sport,
+      // Drop bookmakers whose line went stale before the game started.
+      // last_update ≤ commence_time means the book pulled the market at kickoff.
+      bookmakers: this.filterStaleBookmakers(e.bookmakers || [], e.commence_time),
+    }));
+  }
+
+  // A bookmaker is stale if the game has started AND their last update
+  // predates kickoff (they closed the line and The Odds API is serving a snapshot).
+  filterStaleBookmakers(bookmakers, commenceTime) {
+    const now = Date.now();
+    const kickoff = new Date(commenceTime).getTime();
+    const gameStarted = now >= kickoff;
+    if (!gameStarted) return bookmakers; // Pre-game: all lines are live
+
+    return bookmakers.filter((bk) => {
+      const h2h = (bk.markets || []).find((m) => m.key === 'h2h');
+      if (!h2h?.last_update) return false;
+      const updated = new Date(h2h.last_update).getTime();
+      // Keep only bookmakers that updated AFTER the game started
+      return updated > kickoff;
+    });
   }
 
   async getAllOdds() {

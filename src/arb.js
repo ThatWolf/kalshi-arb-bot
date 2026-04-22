@@ -110,12 +110,15 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
 
       for (const leg of legs) {
         const stakes = calcStakes(leg.p1, leg.p2, bankroll);
+        const commenceTime = event.commence_time;
+        const isLive = Date.now() >= new Date(commenceTime).getTime();
         const entry = {
           ...leg,
           event: `${event.away_team} @ ${event.home_team}`,
           eventTicker: game.eventTicker,
           sport: game.sport,
-          commenceTime: event.commence_time,
+          commenceTime,
+          isLive,
           ...stakes,
         };
         if (stakes.totalImpliedProb < 1) opportunities.push(entry);
