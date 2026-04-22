@@ -1,63 +1,74 @@
 const axios = require('axios');
 
-const BASE_URL = 'https://api.kalshi.com/trade-api/v2';
+const BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
 
-// Keywords used to filter Kalshi markets down to sports
-const SPORT_KEYWORDS = [
-  'nfl', 'nba', 'mlb', 'nhl', 'mls', 'ncaaf', 'ncaab',
-  'super bowl', 'playoffs', 'championship', 'world series', 'stanley cup',
-  'chiefs', 'eagles', 'patriots', 'cowboys', 'bills', 'ravens', '49ers',
-  'lakers', 'celtics', 'warriors', 'heat', 'bulls', 'knicks', 'nets', 'nuggets',
-  'yankees', 'mets', 'dodgers', 'red sox', 'cubs', 'astros', 'cardinals',
-  'maple leafs', 'bruins', 'rangers', 'penguins', 'lightning', 'oilers',
-];
+// Series tickers for individual game winner markets on Kalshi
+const GAME_SERIES = ['KXMLBGAME', 'KXNHLGAME', 'KXNBAGAME', 'KXNFLGAME'];
 
 class KalshiClient {
   constructor() {
     this.http = axios.create({ baseURL: BASE_URL, timeout: 15000 });
   }
 
-  async login(email, password) {
-    const res = await this.http.post('/login', { email, password });
-    const token = res.data.token;
-    this.http.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-    return token;
-  }
-
-  async getOpenMarkets({ limit = 200, cursor } = {}) {
-    const params = { limit, status: 'open' };
-    if (cursor) params.cursor = cursor;
-    const res = await this.http.get('/markets', { params });
-    return {
-      markets: res.data.markets || [],
-      cursor: res.data.cursor || null,
-    };
-  }
-
-  async getAllOpenMarkets(maxPages = 5) {
+  async getMarketsForSeries(seriesTicker, maxPages = 3) {
     const all = [];
     let cursor = null;
     for (let i = 0; i < maxPages; i++) {
-      const { markets, cursor: next } = await this.getOpenMarkets({ cursor });
+      const params = { limit: 200, status: 'open', series_ticker: seriesTicker };
+      if (cursor) params.cursor = cursor;
+      const res = await this.http.get('/markets', { params });
+      const markets = res.data.markets || [];
       all.push(...markets);
-      if (!next || markets.length === 0) break;
-      cursor = next;
+      cursor = res.data.cursor;
+      if (!cursor || markets.length === 0) break;
     }
     return all;
   }
 
-  filterSportsMarkets(markets) {
-    return markets.filter((m) => {
-      if (!m.yes_ask || !m.no_ask) return false;
-      const text = `${m.title || ''} ${m.subtitle || ''} ${m.ticker || ''}`.toLowerCase();
-      return SPORT_KEYWORDS.some((kw) => text.includes(kw));
-    });
+  async getAllGameMarkets() {
+    const results = await Promise.allSettled(
+      GAME_SERIES.map((s) => this.getMarketsForSeries(s))
+    );
+    return results
+      .filter((r) => r.status === 'fulfilled')
+      .flatMap((r) => r.value)
+      .filter((m) => m.yes_ask_dollars && m.no_ask_dollars && m.yes_sub_title);
   }
 
-  // Kalshi prices can be raw cents (1–99 int) or fractional (0.01–0.99 float).
-  // Normalize to cents for consistent math.
-  static normalizePrice(price) {
-    return price <= 1 ? Math.round(price * 100) : price;
+  // Group flat list of markets into per-game objects.
+  // Each game event has 2 markets — one for each team's YES side.
+  static groupByEvent(markets) {
+    const byEvent = {};
+    for (const m of markets) {
+      const key = m.event_ticker;
+      if (!byEvent[key]) byEvent[key] = [];
+      byEvent[key].push(m);
+    }
+
+    const games = [];
+    for (const [eventTicker, legs] of Object.entries(byEvent)) {
+      if (legs.length < 2) continue;
+      const [a, b] = legs;
+      games.push({
+        eventTicker,
+        sport: eventTicker.split('-')[0], // e.g. KXMLBGAME
+        // Use occurrence_datetime for date-based matching; fall back to expected_expiration_time
+        occurrenceDatetime: a.occurrence_datetime || a.expected_expiration_time || null,
+        teamA: {
+          name: a.yes_sub_title,
+          ticker: a.ticker,
+          yesPrice: parseFloat(a.yes_ask_dollars),
+          noPrice: parseFloat(a.no_ask_dollars),
+        },
+        teamB: {
+          name: b.yes_sub_title,
+          ticker: b.ticker,
+          yesPrice: parseFloat(b.yes_ask_dollars),
+          noPrice: parseFloat(b.no_ask_dollars),
+        },
+      });
+    }
+    return games;
   }
 }
 
