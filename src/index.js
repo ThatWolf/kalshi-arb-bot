@@ -7,6 +7,7 @@ const { findArbOpportunities } = require('./arb');
 
 const BANKROLL = parseFloat(process.env.BANKROLL || '1000');
 const NEAR_MISS_THRESHOLD = parseFloat(process.env.NEAR_MISS_THRESHOLD || '1.05');
+const KALSHI_MAX_FEE = parseFloat(process.env.KALSHI_MAX_FEE || '0.07');
 const DIVIDER = '─'.repeat(64);
 
 function pct(v) { return (v * 100).toFixed(2) + '%'; }
@@ -25,16 +26,30 @@ function printEntry(entry, tag) {
   console.log(fmt('Sport:', SPORT_LABEL[entry.sport] || entry.sport));
   console.log(fmt('Kickoff:', new Date(entry.commenceTime).toLocaleString()));
   console.log('');
-  console.log(fmt('Kalshi:', `${entry.kalshiSide}`));
+
+  // Kalshi side — show raw odds, fee, and effective odds
+  const kalshiFeeRatePct = (entry.kalshiFeeRate * 100).toFixed(2);
+  console.log(fmt('Kalshi side:', entry.kalshiSide));
   console.log(fmt('Kalshi ticker:', entry.kalshiTicker));
-  console.log(fmt('Kalshi price:', `${(entry.kalshiPrice * 100).toFixed(0)}¢  →  ${(1 / entry.kalshiPrice).toFixed(4)}x  (impl ${pct(entry.kalshiPrice)})`));
+  console.log(fmt('Kalshi price:', `${(entry.kalshiPrice * 100).toFixed(0)}¢`));
+  console.log(fmt('Kalshi raw odds:', `${entry.kalshiRawOdds.toFixed(4)}x  (impl ${pct(entry.kalshiPrice)})`));
+  console.log(fmt('Kalshi fee:', `${kalshiFeeRatePct}% of profit  →  effective ${entry.kalshiEffectiveOdds.toFixed(4)}x`));
   console.log('');
+
+  // Sportsbook side — show odds and their built-in vig
   console.log(fmt('Bookmaker:', entry.sbBook));
   console.log(fmt('SB side:', entry.sbSide));
-  console.log(fmt('SB odds:', `${entry.sbOdds.toFixed(4)}x  (impl ${pct(entry.p2)})`));
+  console.log(fmt('SB odds:', `${entry.sbOdds.toFixed(4)}x  (impl ${pct(1 / entry.sbOdds)})`));
+  console.log(fmt('SB book vig:', `${entry.bookVigAmt.toFixed(2)}% (total book ${pct(entry.bookVigPct)})`));
   console.log('');
-  const liveWarning = entry.isLive ? '  ⚠  GAME IN PROGRESS — verify line is still open' : '  ✓ pre-game';
-  console.log(fmt('Total implied:', `${pct(entry.totalImpliedProb)}  ${entry.totalImpliedProb < 1 ? '← ARBITRAGE' : `(${pct(entry.totalImpliedProb - 1)} over fair)`}`));
+
+  const liveWarning = entry.isLive
+    ? '⚠  GAME IN PROGRESS — verify line is still open'
+    : '✓  pre-game';
+  const arbLabel = entry.totalImpliedProb < 1
+    ? '← ARBITRAGE (fee-adjusted)'
+    : `(${pct(entry.totalImpliedProb - 1)} over — no arb after fees)`;
+  console.log(fmt('Total implied:', `${pct(entry.totalImpliedProb)}  ${arbLabel}`));
   console.log(fmt('Status:', liveWarning));
 
   if (entry.profit > 0) {
@@ -81,7 +96,8 @@ async function main() {
     return;
   }
 
-  const { opportunities, nearMisses } = findArbOpportunities(matched, BANKROLL, NEAR_MISS_THRESHOLD);
+  console.log(`  Kalshi max fee:          ${(KALSHI_MAX_FEE * 100).toFixed(0)}% (quadratic, peaks at 50¢)`);
+  const { opportunities, nearMisses } = findArbOpportunities(matched, BANKROLL, NEAR_MISS_THRESHOLD, KALSHI_MAX_FEE);
 
   if (opportunities.length > 0) {
     console.log(`\n${'✓ '.repeat(10)}`);
