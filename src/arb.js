@@ -75,7 +75,8 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
         {
           kalshiSide: `YES ${teamA.name}`,
           kalshiTicker: teamA.ticker,
-          kalshiPrice: teamA.yesPrice,
+          kalshiAsk: teamA.yesAsk,   // what you actually pay (used for math)
+          kalshiMid: teamA.yesMid,   // what Kalshi UI shows
           sbSide: teamB.name,
           sbBook: bookmaker.title,
           sbOdds: sbTeamB.price,
@@ -83,7 +84,8 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
         {
           kalshiSide: `YES ${teamB.name}`,
           kalshiTicker: teamB.ticker,
-          kalshiPrice: teamB.yesPrice,
+          kalshiAsk: teamB.yesAsk,
+          kalshiMid: teamB.yesMid,
           sbSide: teamA.name,
           sbBook: bookmaker.title,
           sbOdds: sbTeamA.price,
@@ -91,7 +93,8 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
         {
           kalshiSide: `NO ${teamA.name}`,
           kalshiTicker: teamA.ticker,
-          kalshiPrice: teamA.noPrice,
+          kalshiAsk: teamA.noAsk,
+          kalshiMid: teamA.noMid,
           sbSide: teamA.name,
           sbBook: bookmaker.title,
           sbOdds: sbTeamA.price,
@@ -99,7 +102,8 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
         {
           kalshiSide: `NO ${teamB.name}`,
           kalshiTicker: teamB.ticker,
-          kalshiPrice: teamB.noPrice,
+          kalshiAsk: teamB.noAsk,
+          kalshiMid: teamB.noMid,
           sbSide: teamB.name,
           sbBook: bookmaker.title,
           sbOdds: sbTeamB.price,
@@ -110,9 +114,10 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
       const isLive = Date.now() >= new Date(commenceTime).getTime();
 
       for (const leg of legs) {
+        // Ask price = what you actually pay → used for fee + arb math
         const { effectiveOdds: D1eff, feeRate: kalshiFeeRate } =
-          kalshiEffectiveOdds(leg.kalshiPrice, kalshiMaxFee);
-        const D2eff = leg.sbOdds; // sportsbook vig already baked into the decimal odds
+          kalshiEffectiveOdds(leg.kalshiAsk, kalshiMaxFee);
+        const D2eff = leg.sbOdds;
 
         const stakes = calcStakes(D1eff, D2eff, bankroll);
 
@@ -123,11 +128,12 @@ function findArbOpportunities(matches, bankroll = 1000, nearMissThreshold = 1.05
           sport: game.sport,
           commenceTime,
           isLive,
-          kalshiRawOdds: 1 / leg.kalshiPrice,
+          // Ask: what you pay; mid: what Kalshi UI shows; effective: post-fee
+          kalshiRawOdds: 1 / leg.kalshiAsk,
           kalshiEffectiveOdds: D1eff,
-          kalshiFeeRate,          // e.g. 0.0672 = 6.72%
-          bookVigPct,             // total sportsbook book % (e.g. 1.042)
-          bookVigAmt,             // vig in % points (e.g. 4.2)
+          kalshiFeeRate,
+          bookVigPct,
+          bookVigAmt,
           ...stakes,
         };
 

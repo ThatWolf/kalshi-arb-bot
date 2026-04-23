@@ -27,12 +27,15 @@ function printEntry(entry, tag) {
   console.log(fmt('Kickoff:', new Date(entry.commenceTime).toLocaleString()));
   console.log('');
 
-  // Kalshi side — show raw odds, fee, and effective odds
+  // Kalshi side
   const kalshiFeeRatePct = (entry.kalshiFeeRate * 100).toFixed(2);
+  const askCents = (entry.kalshiAsk * 100).toFixed(0);
+  const midCents = (entry.kalshiMid * 100).toFixed(0);
   console.log(fmt('Kalshi side:', entry.kalshiSide));
   console.log(fmt('Kalshi ticker:', entry.kalshiTicker));
-  console.log(fmt('Kalshi price:', `${(entry.kalshiPrice * 100).toFixed(0)}¢`));
-  console.log(fmt('Kalshi raw odds:', `${entry.kalshiRawOdds.toFixed(4)}x  (impl ${pct(entry.kalshiPrice)})`));
+  // Mid = what Kalshi UI shows; Ask = what you actually pay when buying
+  console.log(fmt('Kalshi price:', `${midCents}¢ mid (UI)  /  ${askCents}¢ ask (your cost)`));
+  console.log(fmt('Kalshi raw odds:', `${entry.kalshiRawOdds.toFixed(4)}x on ask  (impl ${pct(entry.kalshiAsk)})`));
   console.log(fmt('Kalshi fee:', `${kalshiFeeRatePct}% of profit  →  effective ${entry.kalshiEffectiveOdds.toFixed(4)}x`));
   console.log('');
 

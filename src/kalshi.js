@@ -2,8 +2,11 @@ const axios = require('axios');
 
 const BASE_URL = 'https://api.elections.kalshi.com/trade-api/v2';
 
-// Series tickers for individual game winner markets on Kalshi
 const GAME_SERIES = ['KXMLBGAME', 'KXNHLGAME', 'KXNBAGAME', 'KXNFLGAME'];
+
+// Minimum required volume (in contracts) to consider a market liquid enough.
+// Markets with last_price = 0 have never traded and have wide, unreliable spreads.
+const MIN_VOLUME = 10;
 
 class KalshiClient {
   constructor() {
@@ -32,11 +35,9 @@ class KalshiClient {
     return results
       .filter((r) => r.status === 'fulfilled')
       .flatMap((r) => r.value)
-      .filter((m) => m.yes_ask_dollars && m.no_ask_dollars && m.yes_sub_title);
+      .filter((m) => m.yes_ask_dollars && m.yes_bid_dollars && m.no_ask_dollars && m.yes_sub_title);
   }
 
-  // Group flat list of markets into per-game objects.
-  // Each game event has 2 markets — one for each team's YES side.
   static groupByEvent(markets) {
     const byEvent = {};
     for (const m of markets) {
@@ -49,23 +50,33 @@ class KalshiClient {
     for (const [eventTicker, legs] of Object.entries(byEvent)) {
       if (legs.length < 2) continue;
       const [a, b] = legs;
+
+      // Skip events where either market has never traded (last_price = 0).
+      // Those markets have very wide spreads and unreliable quoted prices.
+      const aVol = parseFloat(a.volume_fp || '0');
+      const bVol = parseFloat(b.volume_fp || '0');
+      if (aVol < MIN_VOLUME || bVol < MIN_VOLUME) continue;
+
+      const teamData = (m) => ({
+        name: m.yes_sub_title,
+        ticker: m.ticker,
+        // Ask = what you pay to buy; mid = what Kalshi UI typically shows.
+        // We use ask for arb math (real cost), store mid for display.
+        yesAsk: parseFloat(m.yes_ask_dollars),
+        yesBid: parseFloat(m.yes_bid_dollars),
+        yesMid: (parseFloat(m.yes_bid_dollars) + parseFloat(m.yes_ask_dollars)) / 2,
+        noAsk:  parseFloat(m.no_ask_dollars),
+        noBid:  parseFloat(m.no_bid_dollars),
+        noMid:  (parseFloat(m.no_bid_dollars) + parseFloat(m.no_ask_dollars)) / 2,
+        volume: aVol,
+      });
+
       games.push({
         eventTicker,
-        sport: eventTicker.split('-')[0], // e.g. KXMLBGAME
-        // Use occurrence_datetime for date-based matching; fall back to expected_expiration_time
+        sport: eventTicker.split('-')[0],
         occurrenceDatetime: a.occurrence_datetime || a.expected_expiration_time || null,
-        teamA: {
-          name: a.yes_sub_title,
-          ticker: a.ticker,
-          yesPrice: parseFloat(a.yes_ask_dollars),
-          noPrice: parseFloat(a.no_ask_dollars),
-        },
-        teamB: {
-          name: b.yes_sub_title,
-          ticker: b.ticker,
-          yesPrice: parseFloat(b.yes_ask_dollars),
-          noPrice: parseFloat(b.no_ask_dollars),
-        },
+        teamA: teamData(a),
+        teamB: teamData(b),
       });
     }
     return games;
